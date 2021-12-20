@@ -9,8 +9,8 @@ struct Node
     // std::shared_ptr<Node> prev;
     // 如果能改成 unique_ptr 就更好了!
 
-    std::shared_ptr<Node> next;
-    std::weak_ptr<Node> prev;
+    std::unique_ptr<Node> next;
+    Node* prev;
 
     int value;
 
@@ -20,34 +20,35 @@ struct Node
     // }
     Node(int val) : value(val) {}
 
-    void insert(int val)
-    {
-        auto node = std::make_shared<Node>(val);
-        node->next = next;
-        node->prev = prev;
-        if (!prev.expired())
-            prev.lock()->next = node;
-        if (next)
-            next->prev = node;
-    }
+    // void insert(int val)
+    // {
+    //     auto node = std::make_shared<Node>(val);
+    //     node->next = next;
+    //     node->prev = prev;
+    //     if (!prev.expired())
+    //         prev.lock()->next = node;
+    //     if (next)
+    //         next->prev = node;
+    // }
 
     void erase()
     {
-        if (!prev.expired())
-            prev.lock()->next = next;
+        if (prev)
+            prev->next = std::move(next);
         if (next)
             next->prev = prev;
+        return;
     }
 
     ~Node()
     {
-        printf("~Node()\n"); // 应输出多少次？为什么少了？
+        printf("~Node()\n"); // 应输出多少次？为什么少了？//最初的实现中应当输出7次，但是由于循环引用，析构函数只被调用了两次
     }
 };
 
 struct List
 {
-    std::shared_ptr<Node> head;
+    std::unique_ptr<Node> head;
 
     List() = default;
 
@@ -56,7 +57,7 @@ struct List
         printf("List 被拷贝！\n");
         // head = other.head; // 这是浅拷贝！
         // 请实现拷贝构造函数为 **深拷贝**
-        for (auto p = other.head; p; p = p->next)
+        for (auto p = other.head.get(); p; p = p->next.get())
         {
             push_back(p->value);
         }
@@ -76,7 +77,7 @@ struct List
     int pop_front()
     {
         int ret = head->value;
-        head = head->next;
+        head = std::move(head->next);
         return ret;
     }
 
@@ -84,23 +85,24 @@ struct List
     {
         if (!head)
         {
-            head = std::make_shared<Node>(value);
+            head = std::make_unique<Node>(value);
             return;
         }
-        auto p = head;
+        Node* p = head.get();
         while (p->next)
-            p = p->next;
-        p->next = std::make_shared<Node>(value);
+            p = p->next.get();
+        p->next = std::make_unique<Node>(value);
         p->next->prev = p;
+        return;
     }
 
     void push_front(int value)
     {
-        auto node = std::make_shared<Node>(value);
-        node->next = head;
+        auto node = std::make_unique<Node>(value);
         if (head)
-            head->prev = node;
-        head = node;
+            head->prev = node.get();
+        node->next = std::move(head);
+        head = std::move(node);
     }
 
     Node *at(size_t index) const
